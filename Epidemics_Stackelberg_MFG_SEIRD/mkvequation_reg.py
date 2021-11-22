@@ -2,20 +2,27 @@ import tensorflow as tf
 import numpy as np
 import more_itertools as mit
 
-
-
-
-
+# This class defines the McKean-Vlasov equation
+#
+# Summary of methods
+# 1. qrates(X, P, aS, aI_pop, T, nrStates): calculates transition rates from inputs
+# 2. qmatrix(X, P, aS, aI_pop, T): calculates transition rate matrix from inputs
+# 3. get_a_hat_S(P, nrSamples, Z, aI_pop, X, lambda): returns contact factor control equilibrium function evaluated at the input
+# 4. get_dZ_02(Z, X): returns increments of Z path
+# 5. driver_f_empirical(X, Z, P, aI_pop, lambda): computes players BSDE driver at input
+# 6. terminal_g_empirical(X, P): computes playder BSDE terminal cost at input
+# 7. get_dZ_01(Z, X): returns increments of Z path
+# 8. reg_driver_f_empirical(lambda, P): computes regulator BSDE driver at input
+# 9. reg_terminal_g_empirical(P): computes regulator terminal cost at input
 class MckeanVlasovEquation(object):
-   # def __init__(self, beta, gamma, kappa, lambda1, lambda2, lambda3, cost_I, cost_lambda1):
     def __init__(self, beta, gamma, LAM, delta, eta, cost_I, cost_lambda1, c_sq, minorcost_D, regcost_D, beta_reg, lambda_goal):
-        # parameters of the MFG
+        # equation parameters - see "Optimal incentives to mitigate epidemics: a Stackelberg mean field game approach" for interpretation
         self.beta = beta
         self.gamma = gamma
         self.LAM = LAM
         self.delta = delta
         self.eta = eta
-        self.cost_I = cost_I # penalty for being in I
+        self.cost_I = cost_I
         self.minorcost_D = minorcost_D
         self.regcost_D = regcost_D
         self.cost_lambda1 = cost_lambda1
@@ -74,24 +81,16 @@ class MckeanVlasovEquation(object):
         return LAMBDA[0] + (1./self.cost_lambda1)*self.beta*P_empirical[2]*alpha_I_pop*self.get_dZ_02(Z, X)
 
     def get_dZ_02(self,Z, X):
-        # return tf.reshape(Z[:,1] - Z[:,0], [n_samples,1]) # OR THE OPPOSITE??
         cond0 = tf.reduce_all(tf.equal(X,[1,0,0,0,0]),1)
-        # first_susc = int(min(tf.where(cond0), default=0))
         first_susc = int(tf.math.reduce_min(tf.where(cond0)))
-        #print("susc index", first_susc)
-        #print("Z: ", Z[:,0])
-        return (Z[first_susc,0] - Z[first_susc,2]) # OR THE OPPOSITE??
+        return (Z[first_susc,0] - Z[first_susc,2])
 
     def driver_f_empirical(self, X, Z, P_empirical, alpha_I_pop, LAMBDA):
-        # driver of the BSDE
         n_samples = tf.shape(X)[0]
         a_hat_S = self.get_a_hat_S(P_empirical, n_samples, Z, alpha_I_pop, X, LAMBDA)
         condS = tf.reduce_all(tf.equal(X,[1,0,0,0,0]),1)
-        # condE = tf.reduce_all(tf.equal(X,[0,1,0,0,0]),1)
         condI = tf.reduce_all(tf.equal(X,[0,0,1,0,0]),1)
         condD = tf.reduce_all(tf.equal(X,[0,0,0,1,0]),1)
-        # condR = tf.reduce_all(tf.equal(X,[0,0,0,0,1]),1)
-        
         cost_S = tf.where(condS, 0.5*self.cost_lambda1*(LAMBDA[0] - a_hat_S)**2, tf.zeros((1), tf.dtypes.float64))
         cost_I = tf.where(condI, self.cost_I, tf.zeros((1), tf.dtypes.float64))
         cost_D = tf.where(condD, self.minorcost_D, tf.zeros((1), tf.dtypes.float64))
@@ -104,7 +103,6 @@ class MckeanVlasovEquation(object):
         return 0.5 * self.c_sq * (P_empirical[1]**2) + 0.5 * self.beta_reg[0] * ((LAMBDA[0] - self.lambda_goal[0])**2) + \
     0.5 * self.beta_reg[1] * ((LAMBDA[1] - self.lambda_goal[1])**2) + \
     0.5 * self.beta_reg[2] * ((LAMBDA[2] - self.lambda_goal[2])**2) 
-
 
     def reg_terminal_g_empirical(self, P_empirical):
         return self.regcost_D* P_empirical[3]
